@@ -2,6 +2,7 @@ import minimatch from 'minimatch';
 import { RenovateConfig } from '../../../config/common';
 import { logger } from '../../../logger';
 import { platform } from '../../../platform';
+import { regEx } from '../../../util/regex';
 
 export function getIncludedFiles(
   fileList: string[],
@@ -55,10 +56,10 @@ export async function getMatchingFiles(
   const allFiles = await getFileList();
   const fileList = getFilteredFileList(config, allFiles);
   const { fileMatch, manager } = config;
-  let matchedFiles = [];
+  let matchedFiles: string[] = [];
   for (const match of fileMatch) {
     logger.debug(`Using file match: ${match} for manager ${manager}`);
-    const re = new RegExp(match);
+    const re = regEx(match);
     matchedFiles = matchedFiles.concat(
       fileList.filter((file) => re.test(file))
     );

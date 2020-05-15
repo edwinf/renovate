@@ -1,6 +1,5 @@
 import url, { URLSearchParams } from 'url';
 import delay from 'delay';
-
 import { RenovateConfig } from '../../config/common';
 import {
   REPOSITORY_CHANGED,
@@ -34,7 +33,9 @@ import {
 import GitStorage, { StatusResult } from '../git/storage';
 import { smartTruncate } from '../utils/pr-body';
 import { api } from './bb-got-wrapper';
+import { BbbsRestPr, BbsConfig, BbsPr, BbsRestUserRef } from './types';
 import * as utils from './utils';
+import { PartialDeep } from 'type-fest';
 /*
  * Version: 5.3 (EOL Date: 15 Aug 2019)
  * See following docs for api information:
@@ -44,23 +45,6 @@ import * as utils from './utils';
  * See following page for uptodate supported versions
  * https://confluence.atlassian.com/support/atlassian-support-end-of-life-policy-201851003.html#AtlassianSupportEndofLifePolicy-BitbucketServer
  */
-
-interface BbsConfig {
-  baseBranch: string;
-  bbUseDefaultReviewers: boolean;
-  defaultBranch: string;
-  mergeMethod: string;
-  owner: string;
-  prList: Pr[];
-  projectKey: string;
-  repository: string;
-  repositorySlug: string;
-  storage: GitStorage;
-
-  prVersions: Map<number, number>;
-
-  username: string;
-}
 
 let config: BbsConfig = {} as any;
 
@@ -293,7 +277,7 @@ export function isBranchStale(branchName: string): Promise<boolean> {
 export async function getPr(
   prNo: number,
   refreshCache?: boolean
-): Promise<Pr | null> {
+): Promise<BbsPr | null> {
   logger.debug(`getPr(${prNo})`);
   if (!prNo) {
     return null;
@@ -304,11 +288,11 @@ export async function getPr(
     { useCache: !refreshCache }
   );
 
-  const pr: any = {
+  const pr: BbsPr = {
     displayNumber: `Pull Request #${res.body.id}`,
     ...utils.prInfo(res.body),
     reviewers: res.body.reviewers.map(
-      (r: { user: { name: any } }) => r.user.name
+      (r: { user: { name: string } }) => r.user.name
     ),
     isModified: false,
   };
@@ -426,7 +410,7 @@ export async function findPr({
 export async function getBranchPr(
   branchName: string,
   refreshCache?: boolean
-): Promise<Pr | null> {
+): Promise<BbsPr | null> {
   logger.debug(`getBranchPr(${branchName})`);
   const existingPr = await findPr({
     branchName,
@@ -442,29 +426,26 @@ export function getAllRenovateBranches(
   return config.storage.getAllRenovateBranches(branchPrefix);
 }
 
-export async function commitFilesToBranch({
+export async function commitFiles({
   branchName,
   files,
   message,
-  parentBranch = config.baseBranch,
 }: CommitFilesConfig): Promise<string | null> {
   logger.debug(
-    `commitFilesToBranch(${JSON.stringify(
+    `commitFiles(${JSON.stringify(
       {
         branchName,
         filesLength: files.length,
         message,
-        parentBranch,
       },
       null,
       2
     )})`
   );
-  const commit = config.storage.commitFilesToBranch({
+  const commit = config.storage.commitFiles({
     branchName,
     files,
     message,
-    parentBranch,
   });
 
   // wait for pr change propagation
@@ -883,16 +864,27 @@ export async function ensureComment({
 export async function ensureCommentRemoval({
   number: prNo,
   topic,
+  content,
 }: EnsureCommentRemovalConfig): Promise<void> {
   try {
-    logger.debug(`Ensuring comment "${topic}" in #${prNo} is removed`);
+    logger.debug(
+      `Ensuring comment "${topic || content}" in #${prNo} is removed`
+    );
     const comments = await getComments(prNo);
-    let commentId: number;
-    comments.forEach((comment) => {
-      if (comment.text.startsWith(`### ${topic}\n\n`)) {
-        commentId = comment.id;
-      }
-    });
+
+    const byTopic = (comment: Comment): boolean =>
+      comment.text.startsWith(`### ${topic}\n\n`);
+    const byContent = (comment: Comment): boolean =>
+      comment.text.trim() === content;
+
+    let commentId: number | null = null;
+
+    if (topic) {
+      commentId = comments.find(byTopic)?.id;
+    } else if (content) {
+      commentId = comments.find(byContent)?.id;
+    }
+
     if (commentId) {
       await deleteComment(prNo, commentId);
     }
@@ -915,19 +907,19 @@ export async function createPr({
   const description = sanitize(rawDescription);
   logger.debug(`createPr(${branchName}, title=${title})`);
   const base = useDefaultBranch ? config.defaultBranch : config.baseBranch;
-  let reviewers = [];
+  let reviewers: BbsRestUserRef[] = [];
 
   /* istanbul ignore else */
   if (config.bbUseDefaultReviewers) {
     logger.debug(`fetching default reviewers`);
     const { id } = (
-      await api.get(
+      await api.get<{ id: number }>(
         `./rest/api/1.0/projects/${config.projectKey}/repos/${config.repositorySlug}`
       )
     ).body;
 
     const defReviewers = (
-      await api.get(
+      await api.get<{ name: string }[]>(
         `./rest/default-reviewers/1.0/projects/${config.projectKey}/repos/${
           config.repositorySlug
         }/reviewers?sourceRefId=refs/heads/${escapeHash(
@@ -936,12 +928,12 @@ export async function createPr({
       )
     ).body;
 
-    reviewers = defReviewers.map((u: { name: string }) => ({
+    reviewers = defReviewers.map((u) => ({
       user: { name: u.name },
     }));
   }
 
-  const body = {
+  const body: PartialDeep<BbbsRestPr> = {
     title,
     description,
     fromRef: {
@@ -952,9 +944,9 @@ export async function createPr({
     },
     reviewers,
   };
-  let prInfoRes: GotResponse;
+  let prInfoRes: GotResponse<BbbsRestPr>;
   try {
-    prInfoRes = await api.post(
+    prInfoRes = await api.post<BbbsRestPr>(
       `./rest/api/1.0/projects/${config.projectKey}/repos/${config.repositorySlug}/pull-requests`,
       { body }
     );
@@ -975,8 +967,7 @@ export async function createPr({
     throw err;
   }
 
-  const pr: Pr = {
-    id: prInfoRes.body.id,
+  const pr: BbsPr = {
     displayNumber: `Pull Request #${prInfoRes.body.id}`,
     isModified: false,
     ...utils.prInfo(prInfoRes.body),

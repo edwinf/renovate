@@ -1,4 +1,4 @@
-import { platform } from '../../../../test/util';
+import { RenovateConfig, platform } from '../../../../test/util';
 import { raiseDeprecationWarnings } from './deprecated';
 
 describe('workers/repository/process/deprecated', () => {
@@ -8,14 +8,14 @@ describe('workers/repository/process/deprecated', () => {
       await expect(raiseDeprecationWarnings(config, {})).resolves.not.toThrow();
     });
     it('returns if disabled', async () => {
-      const config = {
+      const config: RenovateConfig = {
         repoIsOnboarded: true,
         suppressNotifications: ['deprecationWarningIssues'],
       };
       await expect(raiseDeprecationWarnings(config, {})).resolves.not.toThrow();
     });
     it('raises deprecation warnings', async () => {
-      const config = {
+      const config: RenovateConfig = {
         repoIsOnboarded: true,
         suppressNotifications: [],
       };

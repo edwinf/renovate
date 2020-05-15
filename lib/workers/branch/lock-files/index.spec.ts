@@ -1,6 +1,7 @@
 import _fs from 'fs-extra';
 import { mocked } from '../../../../test/util';
 import { getConfig } from '../../../config/defaults';
+import { PostUpdateConfig } from '../../../manager/common';
 import * as _lockFiles from '../../../manager/npm/post-update';
 import * as _lerna from '../../../manager/npm/post-update/lerna';
 import * as _npm from '../../../manager/npm/post-update/npm';
@@ -28,7 +29,7 @@ const { writeUpdatedPackageFiles, getAdditionalFiles } = lockFiles;
 
 describe('manager/npm/post-update', () => {
   describe('writeUpdatedPackageFiles', () => {
-    let config;
+    let config: PostUpdateConfig;
     beforeEach(() => {
       config = {
         ...defaultConfig,
@@ -70,7 +71,7 @@ describe('manager/npm/post-update', () => {
     });
   });
   describe('getAdditionalFiles', () => {
-    let config;
+    let config: PostUpdateConfig;
     beforeEach(() => {
       config = {
         ...defaultConfig,
@@ -104,7 +105,7 @@ describe('manager/npm/post-update', () => {
     });
     it('returns no error and empty lockfiles if lock file maintenance exists', async () => {
       config.updateType = 'lockFileMaintenance';
-      config.parentBranch = 'renovate/lock-file-maintenance';
+      config.reuseExistingBranch = true;
       platform.branchExists.mockResolvedValueOnce(true);
       const res = await getAdditionalFiles(config, { npm: [{}] });
       expect(res).toMatchSnapshot();

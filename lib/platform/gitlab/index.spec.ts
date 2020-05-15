@@ -43,7 +43,7 @@ describe('platform/gitlab', () => {
       getAllRenovateBranches: jest.fn(),
       getCommitMessages: jest.fn(),
       getFile: jest.fn(),
-      commitFilesToBranch: jest.fn(),
+      commitFiles: jest.fn(),
       mergeBranch: jest.fn(),
       deleteBranch: jest.fn(),
       getRepoStatus: jest.fn(),
@@ -852,7 +852,7 @@ describe('platform/gitlab', () => {
     });
   });
   describe('ensureCommentRemoval', () => {
-    it('deletes comment if found', async () => {
+    it('deletes comment by topic if found', async () => {
       await initRepo({ repository: 'some/repo', token: 'token' });
       api.get.mockResolvedValueOnce(
         partial<GotResponse>({
@@ -860,6 +860,16 @@ describe('platform/gitlab', () => {
         })
       );
       await gitlab.ensureCommentRemoval({ number: 42, topic: 'some-subject' });
+      expect(api.delete).toHaveBeenCalledTimes(1);
+    });
+    it('deletes comment by content if found', async () => {
+      await initRepo({ repository: 'some/repo', token: 'token' });
+      api.get.mockResolvedValueOnce(
+        partial<GotResponse>({
+          body: [{ id: 1234, body: 'some-body\n' }],
+        })
+      );
+      await gitlab.ensureCommentRemoval({ number: 42, content: 'some-body' });
       expect(api.delete).toHaveBeenCalledTimes(1);
     });
   });
@@ -1134,11 +1144,11 @@ These updates have all been created already. Click a checkbox below to force a r
       await gitlab.getFile('');
     });
   });
-  describe('commitFilesToBranch()', () => {
+  describe('commitFiles()', () => {
     it('sends to gitFs', async () => {
       expect.assertions(1);
       await initRepo();
-      await gitlab.commitFilesToBranch({
+      await gitlab.commitFiles({
         branchName: 'some-branch',
         files: [{ name: 'SomeFile', contents: 'Some Content' }],
         message: '',

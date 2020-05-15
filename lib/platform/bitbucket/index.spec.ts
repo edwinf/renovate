@@ -36,7 +36,7 @@ describe('platform/bitbucket', () => {
       getAllRenovateBranches: jest.fn(),
       getCommitMessages: jest.fn(),
       getFile: jest.fn(),
-      commitFilesToBranch: jest.fn(),
+      commitFiles: jest.fn(),
       mergeBranch: jest.fn(),
       deleteBranch: jest.fn(),
       getRepoStatus: jest.fn(),
@@ -490,11 +490,11 @@ describe('platform/bitbucket', () => {
     });
   });
 
-  describe('commitFilesToBranch()', () => {
+  describe('commitFiles()', () => {
     it('sends to gitFs', async () => {
       await initRepo();
       await mocked(async () => {
-        await bitbucket.commitFilesToBranch({
+        await bitbucket.commitFiles({
           branchName: 'test',
           files: [],
           message: 'message',

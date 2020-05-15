@@ -8,6 +8,7 @@ import {
   REPOSITORY_CHANGED,
   REPOSITORY_EMPTY,
   REPOSITORY_TEMPORARY_ERROR,
+  SYSTEM_INSUFFICIENT_DISK_SPACE,
 } from '../../constants/error-messages';
 import { logger } from '../../logger';
 import * as limits from '../../workers/global/limits';
@@ -168,6 +169,9 @@ export class Storage {
         await this._git.clone(config.url, '.', opts);
       } catch (err) /* istanbul ignore next */ {
         logger.debug({ err }, 'git clone error');
+        if (err.message?.includes('write error: No space left on device')) {
+          throw new Error(SYSTEM_INSUFFICIENT_DISK_SPACE);
+        }
         throw new Error(PLATFORM_FAILURE);
       }
       const durationMs = Math.round(Date.now() - cloneStart);
@@ -304,12 +308,7 @@ export class Storage {
   async getFileList(): Promise<string[]> {
     const branch = this._config.baseBranch;
     const submodules = await this.getSubmodules();
-    const files: string = await this._git.raw([
-      'ls-tree',
-      '-r',
-      '--name-only',
-      branch,
-    ]);
+    const files: string = await this._git.raw(['ls-tree', '-r', branch]);
     // istanbul ignore if
     if (!files) {
       return [];
@@ -317,6 +316,8 @@ export class Storage {
     return files
       .split('\n')
       .filter(Boolean)
+      .filter((line) => line.startsWith('100'))
+      .map((line) => line.split(/\t/).pop())
       .filter((file: string) =>
         submodules.every((submodule: string) => !file.startsWith(submodule))
       );
@@ -463,17 +464,20 @@ export class Storage {
     }
   }
 
-  async commitFilesToBranch({
+  async commitFiles({
     branchName,
     files,
     message,
-    parentBranch = this._config.baseBranch,
   }: CommitFilesConfig): Promise<string | null> {
     logger.debug(`Committing files to branch ${branchName}`);
     try {
       await this._git.reset('hard');
       await this._git.raw(['clean', '-fd']);
-      await this._git.checkout(['-B', branchName, 'origin/' + parentBranch]);
+      await this._git.checkout([
+        '-B',
+        branchName,
+        'origin/' + this._config.baseBranch,
+      ]);
       const fileNames = [];
       const deleted = [];
       for (const file of files) {
